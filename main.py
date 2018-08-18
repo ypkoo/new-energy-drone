@@ -12,8 +12,10 @@ from keras import backend as K
 import matplotlib.pyplot as plt
 import pathlib
 from keras.utils.vis_utils import plot_model
+from keras.callbacks import ModelCheckpoint, EarlyStopping, TensorBoard
 import json
 import pprint
+from glob import glob
 
 import time
 
@@ -40,9 +42,9 @@ def learn(profile):
 		shift_num = args['shift_num']
 		x_labels = args['x_labels']
 		y_label = args['y_label']
-		file_list = args['file_list']
 
-		
+		# file_list = args['file_list']
+		file_list = glob("data/"+args['data_dir']+"/*.csv")
 
 		if type_ == 'rnn':
 
@@ -56,7 +58,7 @@ def learn(profile):
 			y_data_list = []
 
 			for f in file_list:
-				df = pd.read_csv('data/'+f)
+				df = pd.read_csv(f)
 				df = ip.shift_power(df, shift_num)
 				x_data = sc.fit_transform(df[x_labels])
 				x_data = pd.DataFrame(data=x_data, columns=x_labels)
@@ -88,13 +90,13 @@ def learn(profile):
 			df_list = []
 
 			for f in file_list:
-				df = pd.read_csv('data/'+f)
+				df = pd.read_csv(f)
 
 				df = ip.make_history(df, history_labels, history_num)
-				# print(df_)
 				df = ip.delete_useless_power_shift(df, shift_num=shift_num, history_num=history_num)
 				# df = df.drop(df[df.isnull().any(1)].index) # delete if a row contains NaN
 				df_list.append(df)
+
 
 			df_concat = pd.concat(df_list)
 
@@ -108,17 +110,25 @@ def learn(profile):
 
 		# make save directory
 		pathlib.Path(save_dir).mkdir(parents=True, exist_ok=True)
+		pathlib.Path(save_dir+"/weights").mkdir(parents=True, exist_ok=True)
 
 		x_train, x_test, y_train, y_test = train_test_split(x_data, y_data, test_size=FLAGS.test_size, random_state=FLAGS.seed)
 
 		log.logger.info("x_shape: " + str(x_data.shape) + ", y_shape:" + str(y_data.shape))
 
 
+		# callbacks
+		checkpoint = ModelCheckpoint(filepath=save_dir+'weights.hdf5', save_best_only=True)
+		earlystop = EarlyStopping(monitor='val_loss', patience=20, verbose=1)
+		tensorboard = TensorBoard(log_dir=save_dir)
+
 		# Start training
 		history = model.fit(x_train, y_train, validation_data=(x_test, y_test), epochs=FLAGS.n_e,
-				  batch_size=FLAGS.b_s, verbose=FLAGS.verbose)
+				  batch_size=FLAGS.b_s, verbose=FLAGS.verbose, callbacks=[checkpoint, earlystop, tensorboard])
 
 		# Save plots
+		# print("figure size", plt.rcParams["figure.figsize"])
+		plt.rcParams["figure.figsize"] = [12, 5]
 		plt.plot(history.history['mean_acc'])
 		plt.plot(history.history['val_mean_acc'])
 		plt.title('model accuracy')
@@ -130,6 +140,7 @@ def learn(profile):
 
 		plt.gcf().clear()
 
+		plt.ylim(0, 1300000)
 		plt.plot(history.history['loss'])
 		plt.plot(history.history['val_loss'])
 		plt.title('model loss')
@@ -139,6 +150,9 @@ def learn(profile):
 		# plt.show()
 		plt.savefig(save_dir+'loss.eps', format='eps', dpi=1200)
 
+
+		# load the best model
+		model.load_weights(save_dir+'weights.hdf5')
 
 		# Evaluate the model
 		scores = model.evaluate(x_test, y_test)
@@ -170,7 +184,7 @@ def learn(profile):
 		model_json = model.to_json()
 		with open(save_dir+"model.json", "w") as json_file:
 			json_file.write(model_json)  # serialize model to JSON
-		model.save_weights(save_dir+"weight.h5")  # weight
+		# model.save_weights(save_dir+"weight.h5")  # weight
 		print("Save model ... done")
 
 		# Save args
