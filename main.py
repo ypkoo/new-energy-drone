@@ -1,8 +1,6 @@
 #!/usr/bin/env python
 #coding=utf8
 
-import config
-import log_result as log
 import models
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
@@ -21,30 +19,90 @@ import time
 
 import input_preprocess as ip
 
-FLAGS = config.flags.FLAGS
+
+def reshape_data_rnn(args, file_list):
+	sc = StandardScaler()
+
+	shift_num = args['shift_num']
+	x_labels = args['x_labels'][:]
+	y_label = args['y_label']
+	time_window = args['time_window']
+
+	x_data_list = []
+	y_data_list = []
+
+	for f in file_list:
+		df = pd.read_csv(f)
+		df = ip.shift_power(df, shift_num)
+		x_data = sc.fit_transform(df[x_labels])
+		x_data = pd.DataFrame(data=x_data, columns=x_labels)
+		df = x_data.join(df[y_label])
+
+		x_data, y_data = ip.reshape_for_rnn(df, time_window=time_window)
+
+		x_data_list.append(x_data)
+		y_data_list.append(y_data)
+
+
+	x_data = np.concatenate(x_data_list)
+	y_data = np.concatenate(y_data_list)
+
+	return x_data, y_data
+
+def reshape_data_fc(args, file_list):
+	sc = StandardScaler()
+
+	shift_num = args['shift_num']
+	x_labels = args['x_labels'][:]
+	y_label = args['y_label']
+	history_labels = args['history_labels']
+	history_num = args['history_num']
+
+	for l in history_labels:
+		for n in range(history_num):
+			x_labels.append(l+"_" + str(n+1))
+
+	df_list = []
+
+	for f in file_list:
+		df = pd.read_csv(f)
+
+		df = ip.make_history(df, history_labels, history_num)
+		df = ip.delete_useless_power_shift(df, shift_num=shift_num, history_num=history_num)
+		# df = df.drop(df[df.isnull().any(1)].index) # delete if a row contains NaN
+		df_list.append(df)
+
+
+	df_concat = pd.concat(df_list)
+
+	# x_data = sc.fit_transform(df_concat[x_labels])
+	x_data = df_concat[x_labels].values
+	y_data = df_concat[y_label].values
+
+	return x_data, y_data
 
 
 def learn(profile):
 
-	sc = StandardScaler()
+	# make a result directory
+	pathlib.Path('result').mkdir(parents=True, exist_ok=True)
 
 	title = profile['title']
-
-
 	arg_list = profile['arg_list']
 
 	for args in arg_list:
 		pprint.pprint(args)
 		
-
 		type_ = args['type']
 
 		shift_num = args['shift_num']
-		x_labels = args['x_labels']
+		x_labels = args['x_labels'][:]
 		y_label = args['y_label']
 
-		# file_list = args['file_list']
-		file_list = glob("data/"+args['data_dir']+"/*.csv")
+		if args['file_list'] == None:
+			file_list = glob("data/"+args['data_dir']+"/*.csv")
+		else:
+			file_list = args['file_list']
 
 		if type_ == 'rnn':
 
@@ -54,23 +112,14 @@ def learn(profile):
 			s_time = "%02d%02d-%02d%02d%02d" % (now.tm_mon, now.tm_mday, now.tm_hour, now.tm_min, now.tm_sec)
 			save_dir = "result/%s/rnn-sn%d-tw%d_%s/" % (title, shift_num, time_window, s_time)
 
-			x_data_list = []
-			y_data_list = []
+			x_data, y_data = reshape_data_rnn(args, file_list)
 
-			for f in file_list:
-				df = pd.read_csv(f)
-				df = ip.shift_power(df, shift_num)
-				x_data = sc.fit_transform(df[x_labels])
-				x_data = pd.DataFrame(data=x_data, columns=x_labels)
-				df = x_data.join(df[y_label])
-
-				x_data, y_data = ip.reshape_for_rnn(df, time_window=time_window)
-
-				x_data_list.append(x_data)
-				y_data_list.append(y_data)
-
-			x_data = np.concatenate(x_data_list)
-			y_data = np.concatenate(y_data_list)
+			if args['test_file_list'] == None:
+				x_train, x_test, y_train, y_test = train_test_split(x_data, y_data, test_size=0.2, random_state=1)
+			else:
+				x_train = x_data
+				y_train = y_data
+				x_test, y_test = reshape_data_rnn(args, args['test_file_list'])
 
 			model = models.lstm(input_shape=(x_data.shape[1], x_data.shape[2]))
 
@@ -83,48 +132,29 @@ def learn(profile):
 			s_time = "%02d%02d-%02d%02d%02d" % (now.tm_mon, now.tm_mday, now.tm_hour, now.tm_min, now.tm_sec)
 			save_dir = "result/%s/fc-sn%d-hn%d_%s/" % (title, shift_num, history_num, s_time)
 
-			for l in history_labels:
-				for n in range(history_num):
-					x_labels.append(l+"_" + str(n+1))
+			x_data, y_data = reshape_data_fc(args, file_list)
 
-			df_list = []
+			if args['test_file_list'] == None:
+				x_train, x_test, y_train, y_test = train_test_split(x_data, y_data, test_size=0.2, random_state=1)
+			else:
+				x_train = x_data
+				y_train = y_data
+				x_test, y_test = reshape_data_fc(args, args['test_file_list'])
 
-			for f in file_list:
-				df = pd.read_csv(f)
-
-				df = ip.make_history(df, history_labels, history_num)
-				df = ip.delete_useless_power_shift(df, shift_num=shift_num, history_num=history_num)
-				# df = df.drop(df[df.isnull().any(1)].index) # delete if a row contains NaN
-				df_list.append(df)
-
-
-			df_concat = pd.concat(df_list)
-
-
-
-			x_data = sc.fit_transform(df_concat[x_labels])
-			y_data = df_concat[y_label].values
-
-			model = models.flexible_model_koo(input_dim=x_data.shape[1], output_dim=1)
+			model = models.flexible_model_koo(input_dim=x_data.shape[1], output_dim=1, weights=args['hidden_layer_weights'])
 
 
 		# make save directory
 		pathlib.Path(save_dir).mkdir(parents=True, exist_ok=True)
-		pathlib.Path(save_dir+"/weights").mkdir(parents=True, exist_ok=True)
-
-		x_train, x_test, y_train, y_test = train_test_split(x_data, y_data, test_size=FLAGS.test_size, random_state=FLAGS.seed)
-
-		log.logger.info("x_shape: " + str(x_data.shape) + ", y_shape:" + str(y_data.shape))
-
 
 		# callbacks
 		checkpoint = ModelCheckpoint(filepath=save_dir+'weights.hdf5', save_best_only=True)
-		earlystop = EarlyStopping(monitor='val_loss', patience=20, verbose=1)
+		earlystop = EarlyStopping(monitor='val_loss', min_delta=1000, patience=100, verbose=1)
 		tensorboard = TensorBoard(log_dir=save_dir)
 
 		# Start training
-		history = model.fit(x_train, y_train, validation_data=(x_test, y_test), epochs=FLAGS.n_e,
-				  batch_size=FLAGS.b_s, verbose=FLAGS.verbose, callbacks=[checkpoint, earlystop, tensorboard])
+		history = model.fit(x_train, y_train, validation_data=(x_test, y_test), epochs=args['epochs'],
+				  batch_size=args['batch_size'], verbose=1, callbacks=[checkpoint, earlystop, tensorboard])
 
 		# Save plots
 		# print("figure size", plt.rcParams["figure.figsize"])

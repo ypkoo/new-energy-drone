@@ -74,11 +74,6 @@ def shift(data, index_list, shift_num):
 	else:
 		return data[:shift_num]
 
-def get_current(data):
-	data['cur'] = ((data['cur_raw'] / 1024.0)*5000 - 2500) / 100
-	data['power'] = data['cur'] * data['vol']
-
-	return data
 
 def get_moving_average(data, index_list, window):
 
@@ -309,8 +304,6 @@ def count_decimal_places(data):
 		print(power[::-1].find('.'))
 
 
-
-
 def save_csv(df, filename, postfix=None):
 	base, ext = os.path.splitext(filename)
 
@@ -319,13 +312,4 @@ def save_csv(df, filename, postfix=None):
 	else:
 		df.to_csv(filename, index=False, sep=",")
 
-if __name__ == '__main__':
-	x = pd.read_csv("0415233753_log_mod2.csv")
 
-	ip = InputPreprocessor()
-
-	x = ip.make_history(x, ['vel_x', 'vel_y'], 2)
-
-	# x = x[1:]
-	print (x)
-	# print y

@@ -2,7 +2,7 @@ from main import *
 
 profile_dict = {}
 
-profile_dict['title'] = 'callback_test2'
+profile_dict['title'] = '0819'
 
 arg_list = []
 
@@ -13,21 +13,30 @@ y_label = ['power']
 
 
 
-for sn in range(25, 38):
-	for hn in range(2):
-		args = {}
-		args['type'] = 'fc'
-		args['shift_num'] = sn
-		args['history_num'] = hn
-		args['history_labels'] = history_labels[:]
-		args['x_labels'] = x_labels[:]
-		args['y_label'] = y_label[:]
+for sn in range(25, 35):
+	for hn in range(5):
+		for width in [10, 20, 30, 40, 50, 100, 150, 200, 250, 300]:
+			for depth in range(10):
+				args = {}
+				args['type'] = 'fc'
+				args['shift_num'] = sn
+				args['history_num'] = hn
+				args['history_labels'] = history_labels[:]
+				args['x_labels'] = x_labels[:]
+				args['y_label'] = y_label[:]
 
-		args['epoch_num'] = 1000
-		args['batch_size'] = 40
-		args['data_dir'] = 'callback_test'
-		args['split_data_for_test'] = True
-		arg_list.append(args)
+				args['epochs'] = 1000
+				args['batch_size'] = 40
+
+				args['file_list'] = None
+				args['data_dir'] = 'callback_test'
+				# args['test_file_list'] = ['data/callback_test/2018-08-08.12_44_23random5-1sec-6.csv']
+				args['test_file_list'] = None
+
+				args['hidden_layer_weights'] = [width] * depth
+
+				args['action_threshold'] = 3
+				arg_list.append(args)
 
 # for sn in range(23, 30):
 # 	for tw in range(1, 2):

@@ -49,7 +49,7 @@ def flexible_model(input_dim, output_dim=1):
 
     return model
 
-def flexible_model_koo(input_dim, output_dim=1):
+def flexible_model_koo(weights, input_dim, output_dim=1):
     if FLAGS.depth < 2:
         print ("depth should be larger than 1")
         exit()
@@ -61,10 +61,8 @@ def flexible_model_koo(input_dim, output_dim=1):
     model.add(Activation('relu'))
     
     
-
-    for i in range(FLAGS.depth - 2):
-
-        model.add(Dense(FLAGS.h_size - i*0, kernel_initializer='uniform'))
+    for weight in weights:
+        model.add(Dense(weight, kernel_initializer='uniform'))
         # model.add(Dropout(FLAGS.dropout_rate))
         model.add(BatchNormalization())
         model.add(Activation('relu'))
