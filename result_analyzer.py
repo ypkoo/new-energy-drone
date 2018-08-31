@@ -5,6 +5,11 @@ from glob import glob
 from abc import ABCMeta, abstractmethod
 import pprint
 import json
+import subprocess
+import os
+import pandas as pd
+from PIL import ImageTk, Image
+import matplotlib.pyplot as plt
 
 # class ResultElemStringFormatter(object):
 
@@ -26,140 +31,27 @@ import json
 # 		for i in range(ELEM_NUM):
 # 			s = s + '{:10}'.format('test')
 
-try:
-    import tkinter as tk
-    import tkinter.ttk as ttk
-except:
-    import Tkinter as tk
-    import ttk as ttk
-
-class VerticalScrollFrame(ttk.Frame):
-    """A ttk frame allowing vertical scrolling only.
-    Use the '.interior' attribute to place widgets inside the scrollable frame.
-    Adapted from https://gist.github.com/EugeneBakin/76c8f9bcec5b390e45df.
-    Amendments:
-    1. Original logic for configuring the interior frame and canvas
-       scrollregion left canvas regions exposed (not suppose to) and allowed
-       vertical scrolling even when canvas height is greater than the canvas
-       required height, respectively. I have provided a new logic to
-       resolve these issues.
-    2. Provided options to configure the styles of the ttk widgets.
-    3. Tested in Python 3.5.2 (default, Nov 23 2017, 16:37:01),
-                 Python 2.7.12 (default, Dec  4 2017, 14:50:18) and
-                 [GCC 5.4.0 20160609] on linux.
-    Author: Sunbear
-    Website: https://github.com/sunbearc22
-    Created on: 2018-02-26
-    Amended on: 2018-03-01 - corrected __configure_canvas_interiorframe() logic.  
-    """
-
-    
-    def __init__(self, parent, *args, **options):
-        """
-        WIDGET-SPECIFIC OPTIONS:
-           style, pri_background, sec_background, arrowcolor,
-           mainborderwidth, interiorborderwidth, mainrelief, interiorrelief 
-        """
-        # Extract key and value from **options using Python3 "pop" function:
-        #   pop(key[, default])
-        style          = options.pop('style',ttk.Style())
-        pri_background = options.pop('pri_background','light grey')
-        sec_background = options.pop('sec_background','grey70')
-        arrowcolor     = options.pop('arrowcolor','black')
-        mainborderwidth     = options.pop('mainborderwidth', 0)
-        interiorborderwidth = options.pop('interiorborderwidth', 0)
-        mainrelief          = options.pop('mainrelief', 'flat')
-        interiorrelief      = options.pop('interiorrelief', 'flat')
-
-        ttk.Frame.__init__(self, parent, style='main.TFrame',
-                           borderwidth=mainborderwidth, relief=mainrelief)
-
-        self.__setStyle(style, pri_background, sec_background, arrowcolor)
-
-        self.__createWidgets(mainborderwidth, interiorborderwidth,
-                             mainrelief, interiorrelief,
-                             pri_background)
-        self.__setBindings()
-
-
-    def __setStyle(self, style, pri_background, sec_background, arrowcolor):
-        '''Setup stylenames of outer frame, interior frame and verticle
-           scrollbar'''        
-        style.configure('main.TFrame', background=pri_background)
-        style.configure('interior.TFrame', background=pri_background)
-        style.configure('canvas.Vertical.TScrollbar', background=pri_background,
-                        troughcolor=sec_background, arrowcolor=arrowcolor)
-
-        style.map('canvas.Vertical.TScrollbar',
-            background=[('active',pri_background),('!active',pri_background)],
-            arrowcolor=[('active',arrowcolor),('!active',arrowcolor)])
-
-
-    def __createWidgets(self, mainborderwidth, interiorborderwidth,
-                        mainrelief, interiorrelief, pri_background):
-        '''Create widgets of the scroll frame.'''
-        self.vscrollbar = ttk.Scrollbar(self, orient='vertical',
-                                        style='canvas.Vertical.TScrollbar')
-        self.vscrollbar.pack(side='right', fill='y', expand='false')
-        self.canvas = tk.Canvas(self,
-                                bd=0, #no border
-                                highlightthickness=0, #no focus highlight
-                                yscrollcommand=self.vscrollbar.set,#use self.vscrollbar
-                                background=pri_background #improves resizing appearance
-                                )
-        self.canvas.pack(side='left', fill='both', expand='true')
-        self.vscrollbar.config(command=self.canvas.yview)
-
-        # reset the view
-        self.canvas.xview_moveto(0)
-        self.canvas.yview_moveto(0)
-
-        # create a frame inside the canvas which will be scrolled with it
-        self.interior = ttk.Frame(self.canvas,
-                                  style='interior.TFrame',
-                                  borderwidth=interiorborderwidth,
-                                  relief=interiorrelief)
-        self.interior_id = self.canvas.create_window(0, 0,
-                                                     window=self.interior,
-                                                     anchor='nw')
-
-
-    def __setBindings(self):
-        '''Activate binding to configure scroll frame widgets.'''
-        self.canvas.bind('<Configure>',self.__configure_canvas_interiorframe)
-        
-
-    def __configure_canvas_interiorframe(self, event):
-        '''Configure the interior frame size and the canvas scrollregion'''
-        #Force the update of .winfo_width() and winfo_height()
-        self.canvas.update_idletasks() 
-
-        #Internal parameters 
-        interiorReqHeight= self.interior.winfo_reqheight()
-        canvasWidth    = self.canvas.winfo_width()
-        canvasHeight   = self.canvas.winfo_height()
-
-        #Set interior frame width to canvas current width
-        self.canvas.itemconfigure(self.interior_id, width=canvasWidth)
-        
-        # Set interior frame height and canvas scrollregion
-        if canvasHeight > interiorReqHeight:
-            #print('canvasHeight > interiorReqHeight')
-            self.canvas.itemconfigure(self.interior_id,  height=canvasHeight)
-            self.canvas.config(scrollregion="0 0 {0} {1}".
-                               format(canvasWidth, canvasHeight))
-        else:
-            #print('canvasHeight <= interiorReqHeight')
-            self.canvas.itemconfigure(self.interior_id, height=interiorReqHeight)
-            self.canvas.config(scrollregion="0 0 {0} {1}".
-                               format(canvasWidth, interiorReqHeight))
 
 class ResultElemBase(object):
 
 	def __init__(self, dir_):
-
+		self.dir_name = dir_
 		self.args = json.loads(open(dir_ + "/args.json").read())
 		self.result = json.loads(open(dir_ + "/result.json").read())
+		self.result['hit_ratio'] = 0.0
+		self.result['rms'] = float(self.result['mse'])**0.5
+
+		try:
+			if self.args['act_vel_upper_threshold'] == None:
+				self.args['act_vel_upper_threshold'] = '-'
+			if self.args['act_vel_lower_threshold'] == None:
+				self.args['act_vel_lower_threshold'] = '-'
+			if self.args['train_data_size'] == None:
+				self.args['train_data_size'] = '-'
+		except:
+			self.args['act_vel_upper_threshold'] = '-'
+			self.args['act_vel_lower_threshold'] = '-'
+			self.args['train_data_size'] = '-'
 
 	@abstractmethod
 	def get_info_string(self):
@@ -174,20 +66,138 @@ class ResultElemBase(object):
 	def get_hit_ratio(self):
 		return self.result['hit_ratio']
 
-	def get_accuracy(self):
-		return self.result['accuracy']
+	def get_acc(self):
+		return self.result['acc']
 
+	def compute_hit_ratio(self, threshold_percent):
+		# df = pd.read_csv(self.dir_name+"pred_result.csv")
+		# hit_count = 0
+		# threshold = threshold_percent * 0.01
+		# for i in range(len(df)):
+		# 	if df.ix[i, 1] < df.ix[i, 0] + df.ix[i, 0]*threshold and df.ix[i, 1] > df.ix[i, 0] - df.ix[i, 0]*threshold:
+
+		# 		hit_count = hit_count + 1
+
+		df = pd.read_csv(self.dir_name+"result_with_features.csv")
+		df_hit = df[abs(df.prediction-df.real) <= df.real*threshold_percent*0.01]
+
+		self.result['hit_ratio'] = (len(df_hit) / len(df)) * 100
+
+	def draw_hit_graph(self, threshold_percent):
+		MARKER_SIZE = 4
+		df = pd.read_csv(self.dir_name+"result_with_features.csv")
+		df_hit = df[abs(df.prediction-df.real) <= df.real*threshold_percent*0.01]
+		df_miss = df[abs(df.prediction-df.real) > df.real*threshold_percent*0.01]
+
+		df_pred = pd.read_csv(self.dir_name+"pred_result.csv")
+		df_pred.columns = ['real', 'prediction']
+		df_pred['upper_line'] = df_pred['real']*(1+threshold_percent*0.01)
+		df_pred['lower_line'] = df_pred['real']*(1-threshold_percent*0.01)
+
+		print(df.shape, df_hit.shape, df_miss.shape)
+
+		plt.rcParams["figure.figsize"] = [12, 5]
+
+		plt.ylim(8500, 17500)
+
+		plt.plot(df_pred['real'], 'o', markersize=3)
+		plt.plot(df_pred['prediction'], 'o', markersize=3)
+		
+		plt.plot(df_pred['upper_line'], 'ro', markersize=1)
+		plt.plot(df_pred['lower_line'], 'ro', markersize=1)
+		# plt.plot(result_trend, 'r--')
+		# plt.plot(result)
+		plt.title('test result')
+		plt.ylabel('power')
+		# plt.xlabel('epoch')
+		plt.legend(['real', 'prediction'], loc='upper left')
+		# plt.show()
+		plt.savefig(self.dir_name+'figures/test_result2.eps', format='eps', dpi=1200)
+		plt.savefig(self.dir_name+'figures/test_result2.png')
+
+		plt.gcf().clear()
+		# plt.rcParams["figure.figsize"] = [10, 10]
+		# # vel
+		
+		# plt.plot(df_hit.vel_x, df_hit.vel_y, 'go', markersize=MARKER_SIZE)
+		# # plt.savefig(self.dir_name+'hitmap_vel_hit.png')
+		# plt.plot(df_miss.vel_x, df_miss.vel_y, 'ro', markersize=MARKER_SIZE)
+
+		# plt.title('hit map')
+		# plt.ylabel('vel_y')
+		# plt.xlabel('vel_x')
+		# plt.legend(['hit', 'miss'], loc='upper left')
+		# plt.savefig(self.dir_name+'hitmap_vel'+str(threshold_percent)+'.png')
+
+		# plt.gcf().clear()
+
+		# # acc
+		# plt.plot(df_hit.acc_x, df_hit.acc_y, 'go', markersize=MARKER_SIZE)
+		# plt.plot(df_miss.acc_x, df_miss.acc_y, 'ro', markersize=MARKER_SIZE)
+
+		# plt.title('hit map')
+		# plt.xlabel('acc_x')
+		# plt.ylabel('acc_y')
+		# plt.legend(['hit', 'miss'], loc='upper left')
+		# plt.savefig(self.dir_name+'hitmap_acc'+str(threshold_percent)+'.png')
+
+		# plt.gcf().clear()
+
+		# # act
+		# plt.plot(df_hit.act_vx, df_hit.act_vy, 'go', markersize=MARKER_SIZE)
+		# plt.plot(df_miss.act_vx, df_miss.act_vy, 'ro', markersize=MARKER_SIZE)
+
+		# plt.title('hit map')
+		# plt.xlabel('act_vx')
+		# plt.ylabel('act_vy')
+		# plt.legend(['hit', 'miss'], loc='upper left')
+		# plt.savefig(self.dir_name+'hitmap_act'+str(threshold_percent)+'.png')
+
+		# plt.gcf().clear()
+
+		# # roll
+		# plt.plot(df_hit.roll, 'go', markersize=MARKER_SIZE)
+		# plt.plot(df_miss.roll, 'ro', markersize=MARKER_SIZE)
+
+		# plt.title('hit map')
+		# plt.ylabel('roll')
+		# plt.legend(['hit', 'miss'], loc='upper left')
+		# plt.savefig(self.dir_name+'hitmap_roll'+str(threshold_percent)+'.png')
+
+		# plt.gcf().clear()
+
+		# # pitch
+		# plt.plot(df_hit.pitch, 'go', markersize=MARKER_SIZE)
+		# plt.plot(df_miss.pitch, 'ro', markersize=MARKER_SIZE)
+
+		# plt.title('hit map')
+		# plt.ylabel('pitch')
+		# plt.legend(['hit', 'miss'], loc='upper left')
+		# plt.savefig(self.dir_name+'hitmap_pitch'+str(threshold_percent)+'.png')
+
+		# plt.gcf().clear()
+
+		# # yaw
+		# plt.plot(df_hit.yaw, 'go', markersize=MARKER_SIZE)
+		# plt.plot(df_miss.yaw, 'ro', markersize=MARKER_SIZE)
+
+		# plt.title('hit map')
+		# plt.ylabel('yaw')
+		# plt.legend(['hit', 'miss'], loc='upper left')
+		# plt.savefig(self.dir_name+'hitmap_yaw'+str(threshold_percent)+'.png')
+
+		# plt.gcf().clear()
 
 class RNNElem(ResultElemBase):
 
 	def get_info_string(self):
 
-		s = '{:10}{:10}{:10}{:10}{:10}{:10}'.format(self.args['type'], 
+		s = '{:5}{:5}{:10}{:10}{:10}{:10}'.format(self.args['type'], 
 													self.args['shift_num'], 
 													'', 
 													self.args['time_window'], 
-													self.result['acc'], 
-													self.result['mse'])
+													self.result['hit_ratio'], 
+													self.result['rms'])
 
 		return s
 
@@ -195,13 +205,15 @@ class RNNElem(ResultElemBase):
 class FCElem(ResultElemBase):
 
 	def get_info_string(self):
-
-		s = '{:10}{:10}{:10}{:10}{:10.5}{:10.6}'.format(self.args['type'], 
+		s = '{:<5}{:<5}{:<5}{:<50}{:<5}{:<5}{:<5}{:<10.2f}{:<10.2f}'.format(self.args['type'], 
 													self.args['shift_num'], 
 													self.args['history_num'], 
-													'', 
-													self.result['acc'], 
-													self.result['mse'])
+													str(self.args['hidden_layer_weights']),
+													self.args['act_vel_upper_threshold'],
+													self.args['act_vel_lower_threshold'],
+													self.args['train_data_size'],
+													self.result['hit_ratio'], 
+													self.result['rms'])
 
 		return s
 
@@ -216,6 +228,16 @@ def result_elem_factory(dir_):
 	else:
 		return None
 
+def text_click_callback(event):
+	print("hi")
+	print(event.x, event.y)
+	# an event to highlight a line when single click is done
+	line_no = event.widget.index("@%s,%s linestart" % (event.x, event.y))
+	#print(line_no)
+	line_end = event.widget.index("%s lineend" % line_no)
+	event.widget.tag_remove("highlight", 1.0, "end")
+	event.widget.tag_add("highlight", line_no, line_end)
+	event.widget.tag_configure("highlight", background="yellow")
 
 class DataPreProcessingWindow(Frame):
 
@@ -229,6 +251,7 @@ class DataPreProcessingWindow(Frame):
 
 		self.info_list = []
 		self.selected_var = IntVar()
+		self.clicked_elem_num = -1
 		#with that, we want to then run init_window, which doesn't yet exist
 		self.init_window()
 
@@ -247,21 +270,45 @@ class DataPreProcessingWindow(Frame):
 		self.detail_frame.grid(row=0, column=2)
 
 
+		self.cut_top_n = Entry(self.button_frame)
 		file_select_btn = Button(self.button_frame, text="Select Files", width=15, command=self.file_select_btn_clicked)
-		file_select_btn.grid(row=0, column=0)
+		sort_by_hit_ratio = Button(self.button_frame, text="sort by hit ratio", width=15, command=self.sort_by_hit_ratio_btn_clicked)
+		sort_by_rms = Button(self.button_frame, text="sort by rms", width=15, command=self.sort_by_rms_btn_clicked)
+		self.hit_ratio_threshold = Entry(self.button_frame)
+		compute_hit_ratio_btn = Button(self.button_frame, text="compute threshod", width=15, command=self.compute_hit_ratio)
+		draw_hit_graph_btn = Button(self.button_frame, text="draw hit graph", width=15, command=self.draw_hit_graph)
 
-		header_label = Label(self.list_frame, text='{:10}{:10}{:10}{:10}{:10}{:10}'.format('type', 'shift', 'history', 'window', 'acc', 'mse'))
-		header_label.grid(row=0, column=0, sticky=N)
+		self.cut_top_n.pack(anchor="n", fill=BOTH)
+		self.cut_top_n.insert(0, '100')
+		file_select_btn.pack(anchor="n", fill=BOTH)
+		sort_by_hit_ratio.pack(anchor="n", fill=BOTH)
+		sort_by_rms.pack(anchor="n", fill=BOTH)
+		self.hit_ratio_threshold.pack(anchor="n", fill=BOTH)
+		compute_hit_ratio_btn.pack(anchor="n", fill=BOTH)
+		draw_hit_graph_btn.pack(anchor="n", fill=BOTH)
+		# file_select_btn.grid(row=0, column=0, sticky=N)
+		# sort_by_hit_ratio.grid(row=1, column=0, sticky=N)
+		# sort_by_rms.grid(row=2, column=0, sticky=N)
+		# open_dir.grid(row=3, column=0, sticky=N)
+		# self.hit_ratio_threshold.grid(row=4, column=0)
+		# compute_hit_ratio_btn.grid(row=5, column=0)
 
-		scrollbar = Scrollbar(list_frame)
-		# scrollbar.pack( side = RIGHT, fill=Y )
-		self.list_elem_frame = Frame(self.list_frame, yscrollcommand = scrollbar.set)
-		self.list_elem_frame.grid(row=1, column=0)
+		header_label = Entry(self.list_frame)
+		header_label.pack(anchor="n", fill=BOTH)
+		header_label.insert(END, '{:<5}{:<5}{:<5}{:<20}{:<5}{:<5}{:<5}{:<10}{:<10}'.format('type', 'shift', 'history', 'network', 'upper', 'lower', 'size', 'hit', 'rms') + "\n")
 
-		scrollbar.config( command = list_elem_frame.yview )
+		self.list_elem_frame = ScrolledText(self.list_frame, width=100, height=65)
+		self.list_elem_frame.pack()
 
-		self.detail_text = ScrolledText(self.detail_frame)
-		self.detail_text.grid(row=0, column=0)
+		self.list_elem_frame.bind("<Button-1>", self.list_elem_clicked)
+		self.list_elem_frame.bind("<Double-Button-1>", self.list_elem_double_clicked)
+
+		self.detail_text = ScrolledText(self.detail_frame, height=65)
+		self.detail_text.pack()
+
+		# img = PhotoImage(file="loss.png")
+		# self.loss_panel = Label(self.detail_frame, image=img)
+		# self.loss_panel.pack(side = "bottom", fill = "both", expand = "yes")
 		# self.file_list_text = ScrolledText(self.list_frame, width=80)
 		# self.file_list_text.grid(row=0, column=0)
 
@@ -269,37 +316,83 @@ class DataPreProcessingWindow(Frame):
 
 		# clear old elements
 		self.info_list = []
-
-		slaves = self.list_elem_frame.pack_slaves()
-		for s in slaves:
-			print("hi")
-			s.destroy()
+		self.list_elem_frame.delete(1.0, END)
 
 
-		dir_ = askdirectory()
-
+		dir_ = askdirectory(initialdir="C:/Users/lanada/Desktop/new_energy_drone/result")
 		dirs = glob(dir_ + "/*/")
 
 		for d in dirs:
-			
 			e = result_elem_factory(d)
 			self.info_list.append(e)
 
 		self.info_list.sort(key=lambda x: x.get_mse())
 
-		for i in range(len(self.info_list)):
-			# self.file_list_text.insert(END, i.get_info_string()+'\n')
-			rb = Radiobutton(self.list_elem_frame, indicatoron=0, text=self.info_list[i].get_info_string(), variable=self.selected_var, value=i, command=self.list_btn_clicked) 
-			rb.pack(anchor="w", fill=BOTH)
+		self.info_list = self.info_list[:int(self.cut_top_n.get())]
+		for i in self.info_list:
+			self.list_elem_frame.insert(END, i.get_info_string()+"\n")
+			# rb = Radiobutton(self.list_elem_frame, indicatoron=0, text=self.info_list[i].get_info_string(), variable=self.selected_var, value=i, command=self.list_btn_clicked) 
+			# rb.pack(anchor="w", fill=BOTH)
 
-	def list_btn_clicked(self):
+	def list_elem_clicked(self, event):
 		self.detail_text.delete(1.0, END)
 
-		item_num = self.selected_var.get()
+		# an event to highlight a line when single click is done
+		line_no = event.widget.index("@%s,%s linestart" % (event.x, event.y))
+		line_end = event.widget.index("%s lineend" % line_no)
+		event.widget.tag_remove("highlight", 1.0, "end")
+		event.widget.tag_add("highlight", line_no, line_end)
+		event.widget.tag_configure("highlight", background="yellow")
 
-		s = pprint.pformat(self.info_list[item_num].args, indent=4)
-		self.detail_text.insert(END, s)
+		self.clicked_elem_num = int(line_no.split('.')[0]) - 1
 
+		s_args = pprint.pformat(self.info_list[self.clicked_elem_num].args, indent=4) + '\n\n'
+		s_results = pprint.pformat(self.info_list[self.clicked_elem_num].result, indent=4)
+		# self.detail_text.insert(END, self.info_list[self.clicked_elem_num].dir_name)
+		self.detail_text.insert(END, s_args)
+		self.detail_text.insert(END, s_results)
+
+		# img = ImageTk.PhotoImage(Image.open(self.info_list[self.clicked_elem_num].dir_name+"loss.png").convert("RGB"))
+		# img = PhotoImage(file=self.info_list[self.clicked_elem_num].dir_name+"loss.png")
+		# self.loss_panel.configure(image=img)
+
+	def list_elem_double_clicked(self, event):
+		line_no = event.widget.index("@%s,%s linestart" % (event.x, event.y))
+		self.clicked_elem_num = int(line_no.split('.')[0]) - 1
+		dir_name = self.info_list[self.clicked_elem_num].dir_name
+		os.startfile(dir_name)
+
+	def sort_by_hit_ratio_btn_clicked(self):
+		self.list_elem_frame.delete(1.0, END)
+		self.detail_text.delete(1.0, END)
+
+		self.info_list.sort(key=lambda x: x.get_acc(), reverse=True)
+		for i in self.info_list:
+			self.list_elem_frame.insert(END, i.get_info_string()+"\n")
+
+	def sort_by_rms_btn_clicked(self):
+		self.list_elem_frame.delete(1.0, END)
+		self.detail_text.delete(1.0, END)
+
+		self.info_list.sort(key=lambda x: x.get_mse())
+		for i in self.info_list:
+			self.list_elem_frame.insert(END, i.get_info_string()+"\n")
+
+	def compute_hit_ratio(self):
+		self.list_elem_frame.delete(1.0, END)
+
+		threshold = float(self.hit_ratio_threshold.get())
+		for i in self.info_list:
+			i.compute_hit_ratio(threshold)
+			self.list_elem_frame.insert(END, i.get_info_string()+"\n")
+
+	def draw_hit_graph(self):
+		threshold = float(self.hit_ratio_threshold.get())
+		for i in self.info_list:
+			i.draw_hit_graph(threshold)
+
+	def print_header(self):
+		self.list_elem_frame.insert(END, '{:10}{:10}{:10}{:10}{:10}{:10}'.format('type', 'shift', 'history', 'window', 'acc', 'mse') + "\n", "bold")
 if __name__ == "__main__":
 	# root window created. Here, that would be the only window, but
 	# you can later have windows within windows.

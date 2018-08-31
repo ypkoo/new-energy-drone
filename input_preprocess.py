@@ -1,19 +1,14 @@
 import pandas as pd
 import numpy as np
-import config
 from pykalman import KalmanFilter
-from math import sqrt
+from math import sqrt, radians, sin, cos
 import os.path
 from sklearn.preprocessing import StandardScaler
 
-FLAGS = config.flags.FLAGS
-
 def get_df(filename=None):
 
-	if filename:
-		df = pd.read_csv(filename)
-	else:
-		df = pd.read_csv(FLAGS.f_dir+FLAGS.f_n)
+	df = pd.read_csv(filename)
+
 
 	return df
 
@@ -49,6 +44,12 @@ def make_history(data, index_list, history_num):
 	# print(data[history_num:])
 	return data[history_num:]
 
+def make_target_feature(data, index_list, shift_num):
+
+	for i in index_list:
+		data[i+'_target'] = data[i].shift(-shift_num)
+
+	return data[:-shift_num]
 
 def make_input_for_cnn(data, index_list, output_index, history_num):
 
@@ -65,14 +66,7 @@ def make_input_for_cnn(data, index_list, output_index, history_num):
 
 
 
-def shift(data, index_list, shift_num):
-	for i in index_list:
-		data[i] = data[i+'_shifted_by_'+str(shift_num)].shift(shift_num)
 
-	if shift_num > 0:
-		return data[shift_num:]
-	else:
-		return data[:shift_num]
 
 
 def get_moving_average(data, index_list, window):
@@ -84,11 +78,15 @@ def get_moving_average(data, index_list, window):
 
 def get_act_vel(data):
 
-	data['act_v'] = (data['act_vx']**2 + data['act_vy']**2 + data['act_vz']**2)**.5
+	data['act_v'] = (data['act_vx']**2 + data['act_vy']**2)**.5
+
+	return data
 
 
 def get_vel(data):
 	data['vel'] = (data['vel_x']**2 + data['vel_y']**2 + data['vel_z']**2)**.5
+
+	return data
 
 
 def get_vel_xy(data):
@@ -201,14 +199,18 @@ def delete_useless_power(data):
 
 	return data
 
+
+
 def delete_useless_power_shift(data, shift_num, history_num=0):
 
 	index_list = []
 
-	data = shift_power(data, shift_num)
+	# data = shift(data, 'power', shift_num)
+	data['power_target'] = data['power'].shift(-shift_num)
+	data = data[:-shift_num]
 	# print(data)
 	for n in range(len(data)-(history_num+1)):
-		if data.at[n+history_num, 'power'] != data.at[n+history_num+1, 'power']:
+		if data.at[n+history_num, 'power_target'] != data.at[n+history_num+1, 'power_target']:
 			index_list.append(n+history_num+1)
 
 	# n = (n+1)%10
@@ -217,8 +219,8 @@ def delete_useless_power_shift(data, shift_num, history_num=0):
 
 	return data
 
-def shift_power(data, shift_num):
-	data['power'] = data['power'].shift(-shift_num)
+def shift(data, shift_index, shift_num):
+	data[shift_index] = data[shift_index].shift(-shift_num)
 
 	return data[:-shift_num]
 
@@ -227,11 +229,41 @@ def remove_abnormal_data(data):
 
 	return data
 
+def trim(data, lower_lim, upper_lim):
+	data = data[(data.power_target > lower_lim) & (data.power_target < upper_lim)]
+
+	return data 
+
 def shuffle_power(data):
 
 	data['power_shuffled'] = data['power'].transform(np.random.permutation)
 
 	return data
+
+def undersample(data, bin_size, sample_num, lower_lim, upper_lim, replace=False):
+
+	sampled_data_list = []
+
+	
+	lower_lim = lower_lim
+	while True:
+		df = data[(data.power_target >= lower_lim) & (data.power_target < lower_lim + bin_size)]
+
+		if replace == True:
+			print("True")
+			df = df.sample(sample_num, replace=True)
+		else:
+			if df.shape[0] > sample_num:
+				df = df.sample(sample_num, replace=False)
+			
+		sampled_data_list.append(df)
+
+		lower_lim = lower_lim + bin_size
+
+		if lower_lim >= upper_lim:
+			break
+
+	return pd.concat(sampled_data_list)
 
 # def concat_for_rnn(filelist):
 # 	df_list = []
@@ -283,6 +315,22 @@ def reshape_for_rnn(data, time_window):
 	# print(rnn_power[0])
 
 	return rnn_data, rnn_power
+
+def rotate_features(df, angle):
+
+	angle_rad = radians(angle)
+
+	df_rotate = df.copy()
+
+	# rotate velocity
+	df_rotate['vel_x'] = df['vel_x']*cos(angle_rad) - df['vel_y']*sin(angle_rad)
+	df_rotate['vel_y'] = df['vel_x']*sin(angle_rad) + df['vel_y']*cos(angle_rad)
+
+	# rotate acceleration
+	df_rotate['acc_x'] = df['acc_x']*cos(angle_rad) - df['acc_y']*sin(angle_rad)
+	df_rotate['acc_y'] = df['acc_x']*sin(angle_rad) + df['acc_y']*cos(angle_rad)
+
+	# rotate attitude
 
 def trim_shift_concat(filelist):
 	df_list = []
